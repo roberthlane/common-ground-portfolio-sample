@@ -37,9 +37,9 @@ const planInput = (
     steps: [],
   },
 });
-async function fixture(t) {
+async function fixture(t, options = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ocg-fictional-test-"));
-  const app = await startDemo({ port: 0, dataDirectory: dir });
+  const app = await startDemo({ port: 0, dataDirectory: dir, ...options });
   t.after(async () => {
     await app.close();
     await fs.rm(dir, { recursive: true, force: true });
@@ -74,7 +74,6 @@ async function request(
 async function login(app, user = "Alex") {
   const r = await request(app, "/api/login", "POST", {
     user,
-    password: "fictional-demo-only",
   });
   assert.equal(r.status, 200);
   return r.cookie;
@@ -125,35 +124,24 @@ test("authentication, same-origin writes, host boundary, and static allowlist", 
   assert.equal(
     (
       await request(app, "/api/login", "POST", {
-        user: "Alex",
-        password: "bad",
+        user: "Unknown",
       })
     ).status,
-    401,
+    400,
   );
   assert.equal(
     (
-      await request(
-        app,
-        "/api/login",
-        "POST",
-        { user: "Alex", password: "fictional-demo-only" },
-        "",
-        { Origin: "https://outsider.invalid" },
-      )
+      await request(app, "/api/login", "POST", { user: "Alex" }, "", {
+        Origin: "https://outsider.invalid",
+      })
     ).status,
     403,
   );
   assert.equal(
     (
-      await request(
-        app,
-        "/api/login",
-        "POST",
-        { user: "Alex", password: "fictional-demo-only" },
-        "",
-        { "X-Demo-Request": "0" },
-      )
+      await request(app, "/api/login", "POST", { user: "Alex" }, "", {
+        "X-Demo-Request": "0",
+      })
     ).status,
     403,
   );
@@ -454,4 +442,142 @@ test("unreadable local state fails closed and is not overwritten with seed", asy
   await fs.writeFile(file, "{broken");
   await assert.rejects(openStore(file).initialize());
   assert.equal(await fs.readFile(file, "utf8"), "{broken");
+});
+
+test("loopback aliases work while cross-origin writes remain forbidden", async (t) => {
+  const app = await fixture(t);
+  const host = `localhost:${app.server.address().port}`;
+  const send = (origin) =>
+    new Promise((resolve, reject) => {
+      const req = http.request(
+        app.url + "/api/login",
+        {
+          method: "POST",
+          headers: {
+            Host: host,
+            Origin: origin,
+            "Content-Type": "application/json",
+            "X-Demo-Request": "1",
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode));
+        },
+      );
+      req.on("error", reject);
+      req.end(JSON.stringify({ user: "Alex" }));
+    });
+  assert.equal(await send(`http://${host}`), 200);
+  assert.equal(await send(app.url), 403);
+  assert.equal(await send("http://localhost.attacker.invalid"), 403);
+});
+
+test("all JSON mutation routes reject non-object bodies without changing state", async (t) => {
+  const app = await fixture(t),
+    cookie = await login(app);
+  const before = await app.store.read(),
+    id = before.state.plans[0].id;
+  for (const [route, method] of [
+    ["/api/login", "POST"],
+    ["/api/items", "POST"],
+    ["/api/plans", "POST"],
+    [`/api/plans/${id}`, "PATCH"],
+    [`/api/plans/${id}/note`, "PATCH"],
+  ]) {
+    for (const value of [null, [], "text", 42]) {
+      assert.equal(
+        (await request(app, route, method, value, cookie)).status,
+        400,
+        route,
+      );
+    }
+  }
+  assert.deepEqual(await app.store.read(), before);
+});
+
+test("demo account selection cannot lock out another evaluator and uses the shipped cookie policy", async (t) => {
+  const app = await fixture(t);
+  for (let i = 0; i < 20; i++) {
+    assert.equal(
+      (await request(app, "/api/login", "POST", { user: "Unknown" })).status,
+      400,
+    );
+  }
+  for (const user of ["Alex", "Jamie"]) {
+    const res = await fetch(app.url + "/api/login", {
+      method: "POST",
+      headers: {
+        Origin: app.url,
+        "X-Demo-Request": "1",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ user }),
+    });
+    assert.equal(res.status, 200);
+    const header = res.headers.get("set-cookie");
+    assert.match(header, /HttpOnly/);
+    assert.match(header, /SameSite=Strict/);
+    assert.match(header, /Max-Age=3600/);
+    const cookie = header.split(";")[0];
+    assert.equal(
+      (await request(app, "/api/session", "GET", undefined, cookie)).data.user,
+      user,
+    );
+    const logout = await fetch(app.url + "/api/logout", {
+      method: "POST",
+      headers: {
+        cookie,
+        Origin: app.url,
+        "X-Demo-Request": "1",
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+    assert.match(logout.headers.get("set-cookie"), /Max-Age=0/);
+  }
+});
+
+test("a missing static asset returns an error without taking down the server", async (t) => {
+  const assets = await fs.mkdtemp(
+    path.join(os.tmpdir(), "ocg-missing-assets-"),
+  );
+  t.after(() => fs.rm(assets, { recursive: true, force: true }));
+  const app = await fixture(t, { assetDirectory: assets });
+  assert.equal((await fetch(app.url + "/app.js")).status, 500);
+  const cookie = await login(app);
+  assert.equal(
+    (await request(app, "/api/search", "GET", undefined, cookie)).status,
+    200,
+  );
+});
+
+test("identical desired-state retries accept stale valid versions, but changes and malformed versions do not", async (t) => {
+  const app = await fixture(t),
+    cookie = await login(app);
+  const id = (await app.store.read()).state.plans[0].id;
+  const p = (await request(app, `/api/plans/${id}`, "GET", undefined, cookie))
+    .data.plan;
+  const before = await app.store.read();
+  const patch = (version, plan) =>
+    request(
+      app,
+      `/api/plans/${id}`,
+      "PATCH",
+      {
+        requestId: randomUUID(),
+        planVersion: version,
+        plan,
+      },
+      cookie,
+    );
+  assert.equal((await patch("0".repeat(64), draftOf(p))).status, 200);
+  assert.deepEqual(await app.store.read(), before);
+  assert.equal((await patch("garbage", draftOf(p))).status, 400);
+  assert.equal(
+    (await patch("0".repeat(64), { ...draftOf(p), title: "Different title" }))
+      .status,
+    412,
+  );
+  assert.deepEqual(await app.store.read(), before);
 });

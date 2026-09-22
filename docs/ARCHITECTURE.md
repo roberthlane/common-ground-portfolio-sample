@@ -1,44 +1,48 @@
-# Architecture and tradeoffs
+# Architecture and API behavior
 
 ```text
-Local browser
-    | same-origin JSON + signed account cookie
+Browser controllers + view templates (public/)
+    | same-origin JSON and signed demo session
     v
-Local-only HTTP harness (demo/server.js)
-    | checks authentication, host/origin, payload limits
-    +--> discovery.js + visibility.js --> authorized saved items
-    +--> plans.js --> validation, references, versions, account-owned notes
+HTTP routes (demo/server.js)
+    +-- discovery + visibility: search only authorized items
+    +-- plans: references, validation, versions, personal notes
     v
 FileStateStore: serialized synchronous mutations
-    +--> .demo-data/board.json
-    +--> .demo-data/board.json.operations.json
+    +-- .demo-data/board.json
+    +-- .demo-data/board.json.operations.json
 ```
 
-## Selected existing mechanisms
+## Discovery and access
 
-- `src/discovery.js`: one shared search function ranks title and location terms; places remain searchable across archived collection context. Private guides are filtered before search counts are computed. Shared items' notes are shared, not private drafts.
-- `src/visibility.js`: audience resolution for fictional accounts. Private plan reads use `findVisiblePlan`; a shared plan may reference only items visible to both accounts. Audiences are fixed when a plan is created.
-- `src/plans.js`: normalized, bounded inputs; deterministic IDs derived from account and request UUID; plan-member references; canonical checksums for core edits and separate per-person note versions. A stale different edit receives HTTP 412. The same already-applied desired state can be recognized during retry recovery.
-- `src/state-store.js`: single-process serialization prevents two handlers from overwriting each other's snapshots. Mutators must be synchronous. Writes replace files through a temporary file and rename. Exceptions before persistence preserve the old state.
-- `src/transaction-context.js`: AsyncLocalStorage detects outbound adapter calls made inside a mutation. The sample has no outbound adapters; a test verifies the guard rejects attempted outbound work.
-- `src/auth.js`: signed, expiring sessions and constant-time comparisons. Password hashing primitives remain and are tested; **the demo login intentionally uses the displayed local demo password**, not an undisclosed real account credential.
+Search ranks title and structured location matches ahead of body text. Collection membership is context, so archived outings do not hide their saved places. Visibility filtering happens before results and counts are calculated.
 
-## New sample harness
+Plans reference saved item IDs. A shared plan accepts only items visible to both accounts; a personal plan accepts its owner’s visible items. The audience is fixed at creation, and inaccessible resources return 404. Shared plan notes are readable by both members, but each member can edit only their own note.
 
-`demo/seed.js`, `demo/store.js`, `demo/server.js`, `demo/integrations.js`, and the small `public/` shell were authored for this sample. The seed is generated from original fictional text. The harness exposes only a static asset allowlist and local APIs. It does not import the original server, runtime secret loader, board seed normalizer, PostgreSQL adapter, provider adapters, migration scripts, or production environment files.
+## Sessions and HTTP boundaries
 
-There are no runtime npm dependencies. Browser assets are same-origin. The browser content policy disallows outside resources. Saving accepts only fictional `.invalid` source URLs and does not fetch them. The preview stub always returns an unavailable result. Provider/integration status is explicitly excluded or stubbed; no success response pretends that a task or message was sent.
+`POST /api/login` with `{"user":"Alex"}` or `{"user":"Jamie"}` selects a demo role and issues a signed one-hour session. There is intentionally no password or login lockout: every evaluator can choose either account. The cookie is HttpOnly and SameSite=Strict. Logout clears the browser cookie; a copied token remains valid until expiry or server restart.
 
-## Persistence and failure boundaries
+The server binds to IPv4 loopback. Only `localhost:<port>` and `127.0.0.1:<port>` Host headers are accepted. Writes additionally require an Origin matching that exact host, JSON content type, and `X-Demo-Request: 1`. A 32 KiB request limit and object validation apply to JSON bodies. Static assets use an explicit allowlist; the browser content policy permits only local assets. Missing assets return an error without crashing the process.
 
-Plan writes use an account/route/request-specific receipt and payload hash. A retry with the same request and payload returns the recorded result; reuse of the ID for a different payload is a conflict. The UI keeps its request ID while retrying the same form, and never silently sends later.
+The preview endpoint is an explicit failure stub. Source URLs must use `.invalid` domains; no links are fetched.
 
-The file backend writes state first and the receipt second. A crash between those writes is not atomic. The selected plan mutators identify a deterministic already-applied plan or identical desired update when a receipt is missing. The test deletes a receipt file in an isolated temporary test directory and verifies that replay does not create a second plan. This does not establish filesystem durability through power loss, multi-process coordination, or cloud recovery. There is no scheduled backup job in the sample.
+## Edits and retries
 
-New library saves use the simpler non-idempotent update path. An interrupted response may leave a successful save whose result was not displayed; search before retrying to avoid a duplicate. Do not claim exactly-once behavior for all operations.
+`POST /api/plans` accepts a UUID `requestId` and a `plan`. `PATCH /api/plans/:id` additionally requires a `planVersion` from the plan detail response. A note update uses `/api/plans/:id/note` with `requestId`, `noteVersion`, and `note`.
 
-The demo format has its own version 1 and fictional marker. Some retained modules contain historical shape-validation/migration helper functions as library code; no route, command, or startup path invokes them. The sample cannot migrate a production database.
+Core versions exclude notes; each person’s note has a separate version. A different edit using a stale version receives **412**, and missing or malformed versions receive **428** or **400**. Forms retain text after request errors; retry is explicit.
 
-## Interface boundaries
+An authorized, identical desired-state PATCH with a syntactically valid stale version returns **200 without changing the board**. This is deliberate recovery when a prior write succeeded but its response or receipt was lost. It does not permit a stale request to change data. Permissions, shape validation, and item-reference checks still run. Notes use the same no-op rule.
 
-Form text remains after an HTTP error, including stale edits. Navigation, reload, account switching, closing the tab, or a browser crash can discard unsaved text. There is no offline queue, persistent private-draft feature, read-receipt system, or messaging endpoint. Browser sessions are shared by tabs in one browser profile; reload other tabs after switching demo accounts.
+Receipts are scoped by account, route, and request ID. Repeating a request and payload returns its recorded result; reusing that ID with a different payload receives **409**. The file store retains the latest 200 receipts. Deterministic plan IDs additionally prevent duplicate creates after a receipt has been removed.
+
+## Persistence tradeoffs
+
+Mutations run synchronously in a single-process queue. An outbound-work guard prevents adapters from making network calls inside mutations. Writes use temporary files with mode 0600 and atomic rename.
+
+State and receipts are separate files, written in that order. They are **not one database transaction**. If a process fails between writes, plan mutators recognize deterministic creates and identical desired state during retry. Tests exercise this missing-receipt window. Atomic rename does not guarantee power-loss durability or coordinate multiple processes.
+
+Ordinary item saves do not use receipts. If a save’s response is interrupted, search before retrying to avoid a duplicate. No exactly-once guarantee is claimed.
+
+The sample format has its own version and marker and rejects unrelated documents. It has no production migration or cloud recovery path. Forms retain unsent text only while open: navigation, reload, account switching, or closing the browser can discard it. There is no offline sending queue.

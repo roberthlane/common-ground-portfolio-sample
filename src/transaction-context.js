@@ -14,6 +14,8 @@ export function stateMutationIsActive() {
 
 export function assertOutboundAllowed(service) {
   if (stateMutationIsActive()) {
-    throw new Error(`${service} network I/O is not allowed inside a state mutation.`);
+    throw new Error(
+      `${service} network I/O is not allowed inside a state mutation.`,
+    );
   }
 }

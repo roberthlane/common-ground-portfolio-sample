@@ -50,7 +50,7 @@ export function makeSeed() {
         "lantern-table",
         "The Lantern Table",
         "restaurant",
-        "An invented neighborhood kitchen with a quiet courtyard.",
+        "A neighborhood kitchen with a quiet courtyard.",
         {
           collection: "old-outing",
           tags: ["dinner", "courtyard"],
@@ -65,7 +65,7 @@ export function makeSeed() {
         "paper-cup",
         "Paper Cup Studio",
         "cafe",
-        "A fictional café with drawing tables and a tiny lending shelf.",
+        "A café with drawing tables and a tiny lending shelf.",
         {
           createdBy: "Jamie",
           place: normalizePlace({
@@ -81,14 +81,14 @@ export function makeSeed() {
         "reed-loop",
         "Reed Loop",
         "park",
-        "An invented level walking circuit around a small pond.",
+        "A level walking circuit around a small pond.",
         { tags: ["walk", "outdoors"] },
       ),
       item(
         "small-pauses",
         "Small Pauses, Big Conversations",
         "article",
-        "Original demo vignette: leave room for a question before moving to the next plan.",
+        "Leave room for a question before moving to the next plan.",
         {
           createdBy: "Jamie",
           sourceUrl: "https://stories.invalid/small-pauses",
@@ -102,9 +102,9 @@ export function makeSeed() {
         "atlas-of-evenings",
         "An Atlas of Evenings",
         "book",
-        "An invented book by the fictional author Rowan Quill, about noticing familiar places.",
+        "A book by Rowan Quill, about noticing familiar places.",
         {
-          tags: ["fictional book", "reading"],
+          tags: ["book", "reading"],
           notes: {
             Alex: "Let us talk about the chapter on windows.",
             Jamie: "",
@@ -122,7 +122,7 @@ export function makeSeed() {
         "alex-preparation",
         "Alex: quiet preparation",
         "guide",
-        "Fictional private note: rehearse the paper-folding lesson.",
+        "Rehearse the paper-folding lesson.",
         {
           collection: "guides",
           guideAudience: "Alex",
@@ -136,7 +136,7 @@ export function makeSeed() {
         "jamie-preparation",
         "Jamie: personal sketch plan",
         "guide",
-        "Fictional private note: sketch three imaginary doorways.",
+        "Sketch three imaginary doorways.",
         {
           collection: "guides",
           guideAudience: "Jamie",
@@ -156,7 +156,7 @@ export function makeSeed() {
           plan: {
             title,
             summary:
-              "Fictional demo plan. No reservation or external task exists.",
+              "Make a little time for something worth looking forward to.",
             audience: audience === "Shared" ? "Shared" : "Only me",
             status: "Draft",
             startDate: "",

@@ -1,51 +1,54 @@
-# Common Ground — local portfolio sample
+# Common Ground
 
-A small, runnable engineering sample for saving ideas, finding them later, and making shared or personal plans. All people, places, books, articles, dates, notes, and preferences are invented for this sample.
+Saved links and good ideas are easy to lose in a message thread. Common Ground brings them onto a shared shelf, where two people can find something again and turn it into a plan.
 
-**MIT-licensed portfolio sample. This repository is private; there is no hosted demo.**
+This runnable portfolio sample demonstrates location search, shared and personal plans, and conflict-safe editing. All people and content are fictional.
 
-![Fictional shared shelf](docs/screenshots/01-shared-shelf.jpg)
+![Shared shelf in the demo’s light theme](docs/screenshots/01-shared-shelf.jpg)
 
-## Run locally
+## Try it
 
-Use Node.js 22 or newer. Validation used Node.js 25.8.1 on macOS. No npm dependencies, package installation, database, Docker, secrets, cloud account, or network service is needed.
+Use **Node.js 22 or newer**. There are no npm dependencies, database, credentials, or external services to configure.
 
 ```sh
-npm test
-npm run check
 npm start
 ```
 
-Open **http://127.0.0.1:4177**. Choose **Alex** or **Jamie**, with demo password **fictional-demo-only**. Both are fictional accounts available to any evaluator. This is an authorization demonstration, not a confidential service or a system to deploy publicly.
-
-The server binds only to `127.0.0.1`, uses its own session cookie and fresh process-local signing key, and writes only to `.demo-data/` beside the sample. It does not read `.env`, cloud credentials, production configuration, or another application's data. Restarting invalidates demo sessions but preserves local sample records. Run only one process per sample directory. Stop with Ctrl+C.
-
-For a fresh demo, stop the server and **move** `.demo-data/` to a separate local archive directory, then restart. Do not point the sample at other data. It rejects documents without its fictional-format marker. Do not enter personal content: the displayed demo credentials are public within the sample.
+Open **http://localhost:4177** (or http://127.0.0.1:4177), then choose **Continue as Alex** or **Continue as Jamie**. These buttons select demo roles; they do not protect confidential accounts. Run this sample locally with made-up content only.
 
 ## Five-minute walkthrough
 
-1. Log in as Alex. In Saved, search **Mossport**, choose **Places → Restaurants**. The Lantern Table appears even though its original outing is archived.
-2. Open it. Read the invented notes, then choose **Start a plan**. Add Reed Loop and save a shared plan. Items are referenced, not duplicated.
-3. Add a checklist step and a note. Open that same plan in a second tab. Save a change in the first tab; submit a different change from the stale second tab. The server rejects the stale version and its form retains the unsent text.
-4. Switch to Jamie and reload any other open tabs. Plans shows shared plans and Jamie's personal plan; Alex's personal plan is absent. Use separate browser profiles if comparing both identities concurrently.
-5. Save an invented idea. Try the preview stub first: it reports unavailable, but saving still works. Refresh to see that the record persisted.
+1. As Alex, search **Mossport** and choose **Places → Restaurants**. The Lantern Table remains discoverable even though its original outing is archived.
+2. Open it and start a shared plan. Add Reed Loop to link dinner with a walk without duplicating either saved item.
+3. Open the plan in two tabs. Save an edit in one, then a different edit in the other. The stale edit is rejected and the form keeps your unsent text.
+4. Switch to Jamie. Shared plans remain visible; Alex’s personal preparation does not. Use separate browser profiles to compare both accounts side by side.
+5. Save an idea, refresh, and find it again. An unavailable link preview does not prevent saving.
 
-See [architecture](docs/ARCHITECTURE.md), [validation and limits](docs/VALIDATION.md), [content provenance](docs/PROVENANCE.md), and [release review](docs/RELEASE-REVIEW.md).
+## Engineering decisions
+
+- **Filter permissions before searching.** Private items stay out of results and counts. A shared plan can reference only items visible to both people.
+- **Separate shared edits from personal notes.** Plan fields have one version; each person’s note has its own. Independent notes do not conflict unnecessarily.
+- **Make retries deliberate and safe.** Plan requests use stable request IDs and payload receipts. A repeated create does not create a second plan.
+- **Keep the sample easy to run.** A single-process file store demonstrates serialized writes and atomic file replacement, with its crash-recovery limits documented explicitly.
+
+See [architecture and API behavior](docs/ARCHITECTURE.md), [validation](docs/VALIDATION.md), and [provenance](docs/PROVENANCE.md).
+
+## Development
+
+```sh
+npm install    # Optional: no dependencies to download
+npm run check  # JavaScript syntax checks
+npm test       # Domain and local HTTP tests
+```
+
+CI runs those checks on Node.js 22 and 24.
+
+Data lives in ignored `.demo-data/`. Restarting preserves records and invalidates sessions. Run one server per directory. To reset, stop the server, move `.demo-data/` elsewhere, and restart. Use Ctrl+C to stop.
 
 ## Contribution
 
 I defined the product requirements and directed development using AI coding tools, which assisted with implementation, testing, and documentation. This portfolio sample uses fictional data to demonstrate shared planning, access controls, version-conflict handling, and persistence.
 
-## Licence
+## License
 
-Original code and demo content are licensed under [MIT](LICENSE). The bundled font retains its separate SIL Open Font License; see [third-party notices](THIRD-PARTY-NOTICES.md).
-
-## What is reused
-
-Selected domain modules implement search, visibility, strict plan validation, item references, independent note versions, request identifiers, authenticated session primitives, and serialized file persistence. The sample adapts fixed account keys to fictional accounts and removes personal destination preferences. A new local HTTP/UI harness exposes a bounded subset of those existing mechanisms. This is not the complete private application or its production frontend.
-
-## What is not demonstrated
-
-No live conversations, relational planning agreements, reservations, catalog imports, provider inference, Todoist task creation, job alerts, media handling, external notifications, deployment tooling, production migrations, or cloud backup/restore. Preview retrieval is a **local failure stub**. The file backend is single-process and does not offer a database transaction across its state and receipt files. See the documented failure window and tests.
-
-Tests demonstrate specific software behavior with synthetic data. They do not establish adoption, time savings, independent security certification, production availability, or individual contribution percentages.
+Original code and demo content are licensed under [MIT](LICENSE). Source Serif retains its separate SIL Open Font License; see [third-party notices](THIRD-PARTY-NOTICES.md).

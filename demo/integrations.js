@@ -1,13 +1,5 @@
-// Local stubs: these functions never use a provider, filesystem credential, or network.
-export const integrationStatus = Object.freeze({
-  preview: "stubbed",
-  cloudStorage: "excluded",
-  todoist: "excluded",
-  ai: "excluded",
-  jobAlerts: "excluded",
-  notifications: "excluded",
-  catalogImports: "excluded",
-});
+// Deliberate failure stub: no external request is made.
+export const integrationStatus = Object.freeze({ preview: "stubbed" });
 export function previewStub() {
   return {
     available: false,

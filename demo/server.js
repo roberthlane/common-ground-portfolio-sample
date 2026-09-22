@@ -7,8 +7,6 @@ import {
   createSessionToken,
   readSessionToken,
   parseCookies,
-  createLoginRateLimiter,
-  safeEqual,
 } from "../src/auth.js";
 import { searchSaved, normalizePlace } from "../src/discovery.js";
 import { isVisibleToUser } from "../src/visibility.js";
@@ -33,6 +31,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const assets = new Map([
   ["/", ["index.html", "text/html"]],
   ["/app.js", ["app.js", "text/javascript"]],
+  ["/views.js", ["views.js", "text/javascript"]],
+  ["/navigation.js", ["navigation.js", "text/javascript"]],
   ["/styles.css", ["styles.css", "text/css"]],
   [
     "/vendor/source-serif-4/SourceSerif4Variable-Roman.woff2",
@@ -53,23 +53,29 @@ async function body(req) {
     if (Buffer.byteLength(text) > 32768)
       throw fail(413, "Request is too large.");
   }
+  let value;
   try {
-    return JSON.parse(text);
+    value = JSON.parse(text);
   } catch {
     throw fail(400, "Expected JSON.");
   }
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw fail(400, "Expected a JSON object.");
+  return value;
 }
 export async function startDemo({
   port = 4177,
   dataDirectory = path.join(root, ".demo-data"),
+  assetDirectory = path.join(root, "public"),
 } = {}) {
   const store = openStore(path.join(dataDirectory, "board.json"));
   await store.initialize();
-  const secret = randomBytes(32).toString("hex"),
-    limiter = createLoginRateLimiter({ maxAttempts: 15 });
+  const secret = randomBytes(32).toString("hex");
   const server = http.createServer(async (req, res) => {
-    const host = `127.0.0.1:${server.address().port}`,
-      origin = `http://${host}`;
+    const port = server.address().port;
+    const host = req.headers.host;
+    const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+    const origin = `http://${host}`;
     const json = (status, value) => {
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(value));
@@ -82,13 +88,14 @@ export async function startDemo({
       "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     );
     try {
-      if (req.headers.host !== host)
+      if (!allowedHosts.has(host))
         throw fail(403, "Use the printed loopback URL.");
       const url = new URL(req.url, origin);
       if (req.method === "GET" && assets.has(url.pathname)) {
         const [file, type] = assets.get(url.pathname);
+        const data = await fs.readFile(path.join(assetDirectory, file));
         res.writeHead(200, { "Content-Type": type });
-        res.end(await fs.readFile(path.join(root, "public", file)));
+        res.end(data);
         return;
       }
       if (!url.pathname.startsWith("/api/")) throw fail(404, "Not found.");
@@ -102,18 +109,11 @@ export async function startDemo({
       )
         throw fail(403, "Same-origin JSON request required.");
       if (url.pathname === "/api/login" && req.method === "POST") {
-        if (limiter.isBlocked("local")) throw fail(429, "Try again later.");
         const input = await body(req);
-        if (
-          !accounts.includes(input.user) ||
-          !safeEqual(
-            typeof input.password === "string" ? input.password : "",
-            "fictional-demo-only",
-          )
-        ) {
-          limiter.recordFailure("local");
-          throw fail(401, "Use the displayed fictional demo credentials.");
-        }
+        // Both identities are available to every local evaluator. This selects
+        // a demo role; it does not pretend to authenticate a private account.
+        if (!accounts.includes(input.user))
+          throw fail(400, "Choose Alex or Jamie.");
         const token = createSessionToken(secret, {
           user: input.user,
           maxAgeMs: 3600000,
