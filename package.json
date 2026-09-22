@@ -1,0 +1,16 @@
+{
+  "name": "common-ground-portfolio-sample",
+  "version": "0.1.0-rc.1",
+  "private": true,
+  "type": "module",
+  "description": "Local-only engineering sample with entirely fictional content",
+  "scripts": {
+    "start": "node demo/server.js",
+    "test": "node --test test/*.test.js",
+    "check": "node scripts/check.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
